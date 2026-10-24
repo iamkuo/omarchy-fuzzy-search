@@ -88,6 +88,7 @@ Item {
   property string fileActionName: ""
   property int fileActionReturnIndex: 0
   property var stateQueue: []
+  property var hiddenAppIds: ({})
 
   // Shared application engine (entries, hidden filters, icons, launch,
   // removal), owned by the shell and also used by the standalone launcher.
@@ -299,19 +300,66 @@ Item {
     return MenuModel.slugify(value)
   }
 
-  // The apps provider is QML-native: rows come from the shared AppLibrary
-  // (DesktopEntries) instead of a bash enumeration, so they carry image
-  // icons, launch feedback, and uninstall support like the launcher.
-  function mergeAppRows() {
-    if (!root.appLibrary) return
+  function normalizeAppId(value) {
+    var id = String(value || "").trim()
+    return id.slice(-8) === ".desktop" ? id.slice(0, -8) : id
+  }
 
-    var rows = root.appLibrary.sortedEntries("")
+  function desktopAppEntries() {
+    var values = DesktopEntries.applications.values || []
+    var rows = []
+    for (var i = 0; i < values.length; i++) {
+      var entry = values[i]
+      if (!entry || entry.noDisplay) continue
+      if (root.hiddenAppIds[root.normalizeAppId(entry.id)] === true) continue
+      rows.push({ entry: entry })
+    }
+    return rows
+  }
+
+  function hiddenAppsCommand() {
+    var desktop = [
+      Quickshell.env("XDG_CURRENT_DESKTOP"),
+      Quickshell.env("XDG_SESSION_DESKTOP"),
+      Quickshell.env("DESKTOP_SESSION")
+    ].filter(function(value) { return String(value || "").length > 0 }).join(":")
+    return "cat " + Util.shellQuote(root.omarchyPath + "/default/omarchy/launcher.hides")
+      + " 2>/dev/null; "
+      + Util.shellQuote(root.omarchyPath + "/shell/services/hidden-entries.sh")
+      + " " + Util.shellQuote(desktop)
+  }
+
+  function refreshHiddenApps() {
+    if (!hiddenAppsProc.running) hiddenAppsProc.running = true
+  }
+
+  function loadHiddenApps(raw) {
+    var next = ({})
+    var lines = String(raw || "").split("\n")
+    for (var i = 0; i < lines.length; i++) {
+      var id = root.normalizeAppId(lines[i])
+      if (id) next[id] = true
+    }
+    root.hiddenAppIds = next
+    if (root.providersLoaded["apps"]) root.mergeAppRows()
+  }
+
+  function appEntryName(entry) {
+    return root.appLibrary ? root.appLibrary.entryName(entry) : String((entry && (entry.name || entry.id)) || "")
+  }
+
+  function appEntrySubtext(entry) {
+    return root.appLibrary ? root.appLibrary.entrySubtext(entry) : String((entry && entry.genericName) || "")
+  }
+
+  function mergeAppRows() {
+    var rows = root.appLibrary ? root.appLibrary.sortedEntries("") : root.desktopAppEntries()
     var appRows = []
     for (var j = 0; j < rows.length; j++) {
-      var entry = rows[j].entry
+      var entry = rows[j].entry || rows[j]
       var appId = String(entry.id || "")
       if (!appId) continue
-      var subtext = root.appLibrary.entrySubtext(entry)
+      var subtext = root.appEntrySubtext(entry)
       var aliases = subtext ? [subtext] : []
       try {
         if (entry.keywords && typeof entry.keywords.join === "function") aliases = aliases.concat(entry.keywords)
@@ -323,7 +371,7 @@ Item {
         icon: "",
         appIcon: String(entry.icon || ""),
         appId: appId,
-        label: root.appLibrary.entryName(entry),
+        label: root.appEntryName(entry),
         title: "",
         target: "",
         description: subtext,
@@ -342,11 +390,38 @@ Item {
     if (root.opened) root.rebuildDisplay()
   }
 
+  function appIconSource(icon) {
+    if (root.appLibrary) return root.appLibrary.iconSource(icon)
+    var value = String(icon || "")
+    if (!value) return Quickshell.iconPath("application-x-executable", true)
+    if (value.indexOf("file://") === 0 || value.indexOf("image://") === 0) return value
+    if (value.charAt(0) === "/") return Util.fileUrl(value)
+    var themed = Quickshell.iconPath(value, true)
+    return themed.length > 0 ? themed : Quickshell.iconPath("application-x-executable", true)
+  }
+
+  function launchApp(appId, label) {
+    if (root.appLibrary) {
+      root.appLibrary.launch(appId, label)
+      return
+    }
+    Util.execDetached("uwsm-app -- gtk-launch " + Util.shellQuote(appId + ".desktop"))
+  }
+
+  function removeApp(appId, label) {
+    if (root.appLibrary) {
+      root.appLibrary.remove(appId, label)
+      return
+    }
+    Util.execDetached(Util.shellQuote(root.omarchyPath + "/bin/omarchy-remove-launcher-entry") + " " + Util.shellQuote(appId) + " " + Util.shellQuote(String(label || appId)))
+  }
+
   function startProviderForMenu(id) {
     var entry = root.item(id)
     if (!entry || !entry.provider || root.providersLoaded[id]) return
     if (entry.provider === "apps") {
       root.providersLoaded[id] = true
+      if (!root.appLibrary) root.refreshHiddenApps()
       root.mergeAppRows()
       return
     }
@@ -1059,7 +1134,7 @@ Item {
       applySerial = requestSerial
       opened = false
       filterText = ""
-      if (root.appLibrary) root.appLibrary.launch(appId, label)
+      root.launchApp(appId, label)
     } else if (row.kind === "file") {
       root.openFileActions(row, index)
     } else if (row.kind === "file-action") {
@@ -1092,7 +1167,7 @@ Item {
     root.deleteTarget = null
     if (!target) return
     root.cancel()
-    if (root.appLibrary) root.appLibrary.remove(target.appId, target.label)
+    root.removeApp(target.appId, target.label)
   }
 
   function applyDmenuSelection(value) {
@@ -1143,6 +1218,7 @@ Item {
     loadProviderForMenu(activeMenu)
     root.refreshFileIndex()
     searchStateFile.reload()
+    if (!root.appLibrary) root.refreshHiddenApps()
     // The shell may start before first-install packages have finished placing
     // their icons. Refresh here even when the desktop entry list did not change.
     if (root.appLibrary) root.appLibrary.refreshIcons()
@@ -1264,6 +1340,17 @@ Item {
         root.searchFiles()
       }
     }
+  }
+
+  Process {
+    id: hiddenAppsProc
+    property string collected: ""
+    command: ["bash", "-c", root.hiddenAppsCommand()]
+    stdout: SplitParser {
+      onRead: function(data) { hiddenAppsProc.collected += data + "\n" }
+    }
+    onStarted: hiddenAppsProc.collected = ""
+    onExited: root.loadHiddenApps(hiddenAppsProc.collected)
   }
 
   Process {
@@ -1691,7 +1778,7 @@ Item {
                 // PNG icons upscaled and blurry on HiDPI displays.
                 sourceSize.width: width * Screen.devicePixelRatio
                 sourceSize.height: height * Screen.devicePixelRatio
-                source: row.isApp && root.appLibrary ? root.appLibrary.iconSource(row.appIcon) : ""
+                source: row.isApp ? root.appIconSource(row.appIcon) : ""
                 asynchronous: true
                 anchors.left: parent.left
                 anchors.leftMargin: root.rowReservedBorderLeft + Style.space(8) + (Style.space(36) - width) / 2
