@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -eu
+
+query="${1-}"
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-search"
+index="$cache_dir/files"
+limit="${OMARCHY_SEARCH_LIMIT:-500}"
+
+[[ -n $query && -f $index ]] || exit 0
+
+fzf --filter="$query" --scheme=path --tiebreak=end,length <"$index" | head -n "$limit" || true

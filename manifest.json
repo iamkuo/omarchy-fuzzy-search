@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "ryankuo.menu",
+  "name": "Fuzzy Omarchy Menu",
+  "version": "1.0.0",
+  "author": "ryankuo",
+  "description": "Fuzzy Omarchy menu search with frecency-ranked files, stars, and in-menu file actions",
+  "kinds": [
+    "menu",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "menu": "Menu.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Fuzzy Omarchy menu",
+    "description": "Launches the Omarchy menu",
+    "category": "Compositor",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.menu"
+  }
+}

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-search"
+index="$cache_dir/files"
+lock="$cache_dir/.index.lock"
+ttl="${OMARCHY_SEARCH_TTL:-300}"
+
+mkdir -p "$cache_dir"
+
+force=0
+[[ ${1:-} == "--force" ]] && force=1
+
+if (( ! force )) && [[ -f $index ]]; then
+  now=$(date +%s)
+  mtime=$(stat -c %Y "$index" 2>/dev/null || echo 0)
+  (( now - mtime < ttl )) && exit 0
+fi
+
+exec 9>"$lock"
+flock -n 9 || exit 0
+
+tmp="$cache_dir/.files.$$"
+trap 'rm -f "$tmp"' EXIT
+
+roots=("$HOME")
+if [[ -f $HOME/.config/omarchy/search-roots ]]; then
+  roots=()
+  while IFS= read -r line; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z $line || $line == \#* ]] && continue
+    line="${line/#\~/$HOME}"
+    [[ -d $line ]] && roots+=("$line")
+  done <"$HOME/.config/omarchy/search-roots"
+  (( ${#roots[@]} )) || roots=("$HOME")
+fi
+
+fd --type f \
+  --one-file-system \
+  --absolute-path \
+  --threads "${OMARCHY_SEARCH_THREADS:-$(nproc)}" \
+  --max-results "${OMARCHY_SEARCH_MAX_RESULTS:-200000}" \
+  --exclude node_modules \
+  --exclude .git \
+  --exclude target \
+  --exclude build \
+  --exclude dist \
+  --exclude __pycache__ \
+  --exclude venv \
+  --exclude .venv \
+  --exclude vendor \
+  --exclude .next \
+  --exclude .nuxt \
+  --exclude coverage \
+  --exclude .gradle \
+  --exclude .m2 \
+  --exclude steamapps \
+  --exclude compatdata \
+  . "${roots[@]}" >"$tmp" 2>/dev/null || true
+
+mv -f "$tmp" "$index"
