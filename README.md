@@ -26,6 +26,7 @@ git clone https://github.com/iamkuo/omarchy-fuzzy-search.git \
   ~/.config/omarchy/plugins/ryankuo.menu
 
 omarchy plugin validate ~/.config/omarchy/plugins/ryankuo.menu
+omarchy-shell shell rescanPlugins
 omarchy plugin enable ryankuo.menu
 ```
 
