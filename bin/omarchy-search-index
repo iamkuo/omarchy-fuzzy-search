@@ -4,6 +4,7 @@ set -euo pipefail
 cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-search"
 index="$cache_dir/files"
 lock="$cache_dir/.index.lock"
+status="$cache_dir/status.json"
 conf="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/fuzzy-search.json"
 
 mkdir -p "$cache_dir"
@@ -28,7 +29,27 @@ exec 9>"$lock"
 flock -n 9 || exit 0
 
 tmp="$cache_dir/.files.$$"
-trap 'rm -f "$tmp"' EXIT
+started=$(date +%s)
+finished=0
+
+# The build may outlive the window that asked for it, so progress lives in a
+# file rather than in the caller. A stale pid (SIGKILL) is filtered by the
+# reader, so `running: true` with a dead pid still reads as stopped.
+write_status() {
+  printf '%s\n' "$1" >"$cache_dir/.status.$$"
+  mv -f "$cache_dir/.status.$$" "$status"
+}
+
+cleanup() {
+  rm -f "$tmp"
+  if (( !finished )); then
+    write_status "$(printf '{"running":false,"pid":%d,"startedAt":%d,"finishedAt":%d,"ok":false}' \
+      "$$" "$started" "$(date +%s)")"
+  fi
+}
+
+trap cleanup EXIT
+write_status "$(printf '{"running":true,"pid":%d,"startedAt":%d}' "$$" "$started")"
 
 roots=("$HOME")
 excludes=()
@@ -82,3 +103,8 @@ done
 fd "${args[@]}" . "${roots[@]}" >"$tmp" 2>/dev/null || true
 
 mv -f "$tmp" "$index"
+finished=1
+files=$(wc -l <"$index" 2>/dev/null || echo 0)
+bytes=$(stat -c %s "$index" 2>/dev/null || echo 0)
+write_status "$(printf '{"running":false,"pid":%d,"startedAt":%d,"finishedAt":%d,"files":%d,"bytes":%d,"ok":true}' \
+  "$$" "$started" "$(date +%s)" "$files" "$bytes")"

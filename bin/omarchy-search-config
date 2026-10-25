@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Read and edit the Fuzzy Search settings file. The QML settings view drives
+# Read and edit the Fuzzy Search settings file. The QML settings window drives
 # this script instead of writing JSON itself, so every change is one atomic
 # rename and two editors cannot clobber each other.
 
@@ -9,7 +9,9 @@ conf_dir="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy"
 conf="$conf_dir/fuzzy-search.json"
 legacy="$conf_dir/search-roots"
 lock="$conf_dir/.fuzzy-search.lock"
-index="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-search/files"
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-search"
+index="$cache_dir/files"
+status="$cache_dir/status.json"
 
 defaults() {
   cat <<'JSON'
@@ -73,13 +75,27 @@ write_config() {
   exec 9>&-
 }
 
-rebuild_in_background() {
-  # Config edits change what the index should contain. Rebuild in the
-  # background so the menu reflects the new folders without waiting for the
-  # TTL. The index script takes a lock, so a run already in flight wins and
-  # this one exits immediately.
+launch_rebuild() {
+  # Detached so the build outlives the settings window (and the shell call
+  # that started it). The index script takes a lock, so a run already in
+  # flight wins and this one exits immediately.
   setsid "$(cd "$(dirname "$0")" && pwd)/omarchy-search-index" --force \
     >/dev/null 2>&1 </dev/null &
+}
+
+rebuild_in_background() {
+  launch_rebuild
+}
+
+status_running() {
+  [[ -s $status ]] || return 1
+  local running pid
+  running=$(jq -r 'if .running then 1 else 0 end' "$status" 2>/dev/null || echo 0)
+  (( running )) || return 1
+  pid=$(jq -r '.pid // 0' "$status" 2>/dev/null || echo 0)
+  (( pid > 0 )) || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  return 0
 }
 
 require_dir() {
@@ -136,6 +152,7 @@ case "$command" in
     ;;
   stats)
     ensure_config
+
     missing=()
     while IFS= read -r path; do
       [[ -n $path ]] || continue
@@ -155,17 +172,40 @@ case "$command" in
       age=-1
     fi
 
+    running=0
+    pid=0
+    started=0
+    if status_running; then
+      running=1
+      pid=$(jq -r '.pid // 0' "$status")
+      started=$(jq -r '.startedAt // 0' "$status")
+    fi
+
     if (( ${#missing[@]} > 0 )); then
       jq -nc --argjson files "$files" --argjson bytes "$bytes" --argjson age "$age" \
-        --args '{files: $files, bytes: $bytes, ageSeconds: $age, missingRoots: $ARGS.positional}' \
+        --argjson running "$running" --argjson pid "$pid" --argjson started "$started" \
+        --args '{files: $files, bytes: $bytes, ageSeconds: $age,
+                 running: ($running == 1), pid: $pid, startedAt: $started,
+                 missingRoots: $ARGS.positional}' \
         "${missing[@]}"
     else
       jq -nc --argjson files "$files" --argjson bytes "$bytes" --argjson age "$age" \
-        '{files: $files, bytes: $bytes, ageSeconds: $age, missingRoots: []}'
+        --argjson running "$running" --argjson pid "$pid" --argjson started "$started" \
+        '{files: $files, bytes: $bytes, ageSeconds: $age,
+          running: ($running == 1), pid: $pid, startedAt: $started,
+          missingRoots: []}'
     fi
     ;;
   rebuild)
-    exec "$(dirname "$0")/omarchy-search-index" --force
+    launch_rebuild
+    ;;
+  stop)
+    if status_running; then
+      pid=$(jq -r '.pid // 0' "$status")
+      if tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q 'omarchy-search-index'; then
+        kill "$pid" 2>/dev/null || true
+      fi
+    fi
     ;;
   *)
     cat >&2 <<'USAGE'
@@ -176,6 +216,7 @@ Usage:
   omarchy-search-config set <key> <json-value>
   omarchy-search-config stats
   omarchy-search-config rebuild
+  omarchy-search-config stop
 USAGE
     exit 2
     ;;

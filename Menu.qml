@@ -91,7 +91,7 @@ Item {
   property int fileActionReturnIndex: 0
   property var stateQueue: []
   property var hiddenAppIds: ({})
-  property bool settingsMode: false
+  readonly property string settingsLauncher: Qt.resolvedUrl("bin/omarchy-search-settings").toString().replace(/^file:\/\//, "")
 
   // Shared application engine (entries, hidden filters, icons, launch,
   // removal), owned by the shell and also used by the standalone launcher.
@@ -126,13 +126,11 @@ Item {
   property int dividerHeight: Style.space(17)
   property bool searchDivider: false
   property int layoutSerial: 0
-  property int cardWidth: Math.min(root.settingsMode ? Style.space(420) : (root.dmenuActive ? Style.space(root.dmenuWidth) : ((root.activeMenu === "trigger.capture.screenrecord" || root.activeMenu === "style.font") ? Style.space(520) : Style.space(300))), panel.width - Style.gapsOut * 2)
+  property int cardWidth: Math.min(root.dmenuActive ? Style.space(root.dmenuWidth) : ((root.activeMenu === "trigger.capture.screenrecord" || root.activeMenu === "style.font") ? Style.space(520) : Style.space(300)), panel.width - Style.gapsOut * 2)
   property int visibleRowsHeight: root.dmenuActive ? dmenuRowListHeight(layoutSerial, displayModel.count, filterText) : rowListHeight(layoutSerial, displayModel.count, filterText, searchDivider)
-  property int cardHeight: root.settingsMode
-    ? Math.min(Style.space(500), panel.height - Style.gapsOut * 2)
-    : (root.dmenuActive
-      ? Math.min(contentMargin * 2 + headerHeight + (mode === "input" ? 0 : contentSpacing + visibleRowsHeight), panel.height - Style.gapsOut * 2)
-      : Math.min(contentMargin * 2 + headerHeight + contentSpacing + visibleRowsHeight, panel.height - Style.gapsOut * 2))
+  property int cardHeight: root.dmenuActive
+    ? Math.min(contentMargin * 2 + headerHeight + (mode === "input" ? 0 : contentSpacing + visibleRowsHeight), panel.height - Style.gapsOut * 2)
+    : Math.min(contentMargin * 2 + headerHeight + contentSpacing + visibleRowsHeight, panel.height - Style.gapsOut * 2)
 
   function finishRequest(selection) {
     if (!root.requestActive || !root.doneFile) {
@@ -1194,7 +1192,6 @@ Item {
   function cancel() {
     if (root.dmenuActive) root.finishRequest(null)
     opened = false
-    settingsMode = false
     filterText = ""
     root.fileActionPath = ""
     root.fileActionName = ""
@@ -1215,7 +1212,6 @@ Item {
     cursorActive = true
     root.fileActionPath = ""
     root.fileActionName = ""
-    root.settingsMode = false
     root.clearFileResults(false)
     root.disarmPointer()
     root.evaluateGuards()
@@ -1250,7 +1246,6 @@ Item {
     cursorActive = mode !== "input"
     root.fileActionPath = ""
     root.fileActionName = ""
-    root.settingsMode = false
     root.clearFileResults(false)
     root.disarmPointer()
     opened = true
@@ -1289,30 +1284,12 @@ Item {
     return "ok"
   }
 
-  // Settings lives in the same card instead of a second window, so the
-  // Super+Space menu is the one place to search, act, and configure.
+  // Settings is its own GTK app: a normal top-level window that stacks,
+  // focuses, and closes like any other application. The menu closes first so
+  // the shared overlay does not fight it for keyboard focus.
   function openSettings() {
-    requestSerial += 1
-    mode = "menu"
-    requestActive = false
-    selectionFile = ""
-    doneFile = ""
-    activeMenu = "root"
-    navStack = []
-    filterText = ""
-    selectedIndex = 0
-    cursorActive = false
-    root.fileActionPath = ""
-    root.fileActionName = ""
-    root.clearFileResults(false)
-    root.disarmPointer()
-    root.settingsMode = true
-    root.opened = true
-    rebuildDisplay()
-    searchStateFile.reload()
-    Qt.callLater(function() {
-      if (settingsLoader.item) settingsLoader.item.focusView()
-    })
+    root.cancel()
+    Util.execDetached(root.settingsLauncher)
   }
 
   function disarmPointer() {
@@ -1528,7 +1505,7 @@ Item {
   }
   PanelWindow {
     id: panel
-    visible: root.opened && (root.rowsLoaded || root.settingsMode)
+    visible: root.opened && root.rowsLoaded
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "omarchy-menu"
@@ -1581,7 +1558,7 @@ Item {
         id: keyCatcher
         anchors.fill: parent
         z: root.deleteConfirmOpen ? 20 : 0
-        focus: !root.settingsMode
+        focus: true
 
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
@@ -1674,27 +1651,7 @@ Item {
         }
       }
 
-      Loader {
-        id: settingsLoader
-        active: root.settingsMode
-        visible: root.settingsMode
-        source: "Settings.qml"
-        anchors.fill: parent
-        anchors.topMargin: card.contentTopInset
-        anchors.rightMargin: card.contentRightInset
-        anchors.bottomMargin: card.contentBottomInset
-        anchors.leftMargin: card.contentLeftInset
-        onLoaded: {
-          item.fontFamily = root.fontFamily
-          item.omarchyPath = root.omarchyPath
-          item.shell = root.shell
-          item.closeRequested.connect(root.cancel)
-          item.focusView()
-        }
-      }
-
       Column {
-        visible: !root.settingsMode
         anchors.fill: parent
         anchors.topMargin: card.contentTopInset
         anchors.rightMargin: card.contentRightInset
@@ -2007,4 +1964,6 @@ Item {
       }
     }
   }
+
+
 }

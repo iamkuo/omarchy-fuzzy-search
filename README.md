@@ -11,9 +11,9 @@ results, frecency ranking, starred files, and an in-menu file actions submenu.
   menu options.
 - **File actions** open in the same menu: default app, editor, file manager,
   terminal, copy path, and star/unstar.
-- **Settings in the same menu** — add or remove indexed folders, include hidden
-  files, keep the walk on local filesystems, tune the refresh interval, and
-  rebuild or stop the index. No second window.
+- **A settings app** — a normal GTK4/libadwaita window (not an overlay) to
+  add or remove indexed folders, include hidden files, keep the walk on local
+  filesystems, tune the refresh interval, and rebuild or stop the index.
 
 ## Requirements
 
@@ -21,6 +21,7 @@ results, frecency ranking, starred files, and an in-menu file actions submenu.
 - `fd`, `fzf`, `jq`, `flock` (`util-linux`), `nautilus`, `wl-copy`, and
   `xdg-terminal-exec`. These ship with or are already used by a normal Omarchy
   install.
+- `python-gobject`, `gtk4`, and `libadwaita` for the settings window.
 
 ## Install
 
@@ -78,20 +79,38 @@ Open it from `Super+Space` by typing `search settings`, or directly:
 omarchy-shell shell summon ryankuo.menu '{"mode":"settings"}'
 ```
 
-The settings view opens in the same card:
+The menu closes and the settings window opens as its own app (a normal
+top-level window, not a layer-shell overlay), so it can be focused, tiled or
+floated, and never stays above other windows.
 
-- **FOLDERS** — every indexed root. `Enter` opens it in the file manager,
-  `Delete` removes it, **Add folder…** takes a path (for example `~/Projects`).
+The settings window is still part of this plugin: it ships in the same folder,
+uses the same `bin/omarchy-search-config` and config file, and is only
+reachable through the plugin's menu entry or `summon` route. Disabling
+`ryankuo.menu` removes both. `omarchy plugin update` updates it with the rest of
+the plugin.
+
+Optional Hyprland rule to float and centre it like a dialog (class is stable):
+
+```lua
+-- ~/.config/hypr/windows.lua
+o.window({ class = "^(io.github.iamkuo.FuzzySearch)$" }, { float = true })
+```
+
+In the window:
+
+- **Indexed folders** — one row per root. The folder button opens it in the
+  file manager; the trash button stops indexing it. **Add Folder…** opens a
+  folder picker.
 - **Include hidden files** — index dotfiles and hidden directories.
 - **Stay on local filesystem** — skip network and FUSE mounts. Keep this on for
   BTRFS speed; turning it off can make a rebuild walk Google Drive or SSHFS.
-- **Refresh index** — cycle the automatic rebuild interval between 1 minute and
-  1 hour.
+- **Refresh index** — the automatic rebuild interval (1 minute to 1 hour).
 - **Rebuild index now** — force a rebuild; while one is running the row becomes
-  **Stop indexing**.
+  **Stop indexing** with a spinner and elapsed time.
 
-Every settings change rebuilds the index in the background, so new folders are
-searchable without waiting for the interval to expire. Esc closes the view.
+Esc closes the window. Every settings change rebuilds the index in a detached
+process, so closing the window does not stop a build: reopening shows the
+running build, then the finished stats.
 
 The configuration is `~/.config/omarchy/fuzzy-search.json`:
 
