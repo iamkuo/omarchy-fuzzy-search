@@ -100,9 +100,10 @@ o.window({ title = "^(Fuzzy Search Settings)$" }, { float = true })
 
 In the window:
 
-- **Indexed folders** — one row per root. The folder button opens it in the
-  file manager; the trash button stops indexing it. **Add Folder…** opens a
-  folder picker.
+- **Indexed folders** — one row per root. Click a row (or press Enter) to open
+  it in the file manager. Remove a folder with the ✕ at the end of its row, or
+  select it and press Delete/Backspace. Removing only stops indexing; it never
+  deletes files. **Add folder…** takes a path.
 - **Include hidden files** — index dotfiles and hidden directories.
 - **Stay on local filesystem** — skip network and FUSE mounts. Keep this on for
   BTRFS speed; turning it off can make a rebuild walk Google Drive or SSHFS.

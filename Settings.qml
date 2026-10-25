@@ -244,11 +244,13 @@ Item {
     var value = addField.text.trim()
     if (!value) { root.cancelInput(); return }
     root.runConfig(["add-root", value])
+    root.message = "Adding " + root.shortPath(value) + "…"
   }
 
   function removeRoot(path) {
     if (!path) return
     root.runConfig(["remove-root", path])
+    root.message = "Removed " + root.shortPath(path) + " from the index"
   }
 
   function deleteSelected() {
@@ -635,10 +637,32 @@ Item {
               font.pixelSize: Style.font.body
               anchors.verticalCenter: parent.verticalCenter
             }
+
+            Text {
+              id: removeText
+              textFormat: Text.PlainText
+              visible: !rowItem.isSection && modelData.kind === "root"
+              text: "✕"
+              color: removeMouse.containsMouse ? root.urgent : root.foreground
+              opacity: removeMouse.containsMouse ? 1 : 0.4
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              anchors.verticalCenter: parent.verticalCenter
+
+              MouseArea {
+                id: removeMouse
+                anchors.fill: parent
+                anchors.margins: -Style.space(6)
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.removeRoot(rowItem.modelData.path)
+              }
+            }
           }
 
           MouseArea {
             id: rowMouse
+            z: -1
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
@@ -668,7 +692,7 @@ Item {
       width: parent.width
       text: root.inputOpen
         ? "Enter add · Esc cancel"
-        : "Enter open/toggle · Delete remove · Esc close"
+        : "Enter open/toggle · Delete or ✕ remove · Esc close"
       color: root.foreground
       opacity: 0.38
       font.family: root.fontFamily

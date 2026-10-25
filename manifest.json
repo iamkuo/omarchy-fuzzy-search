@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "ryankuo.menu",
   "name": "Fuzzy Omarchy Menu",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "author": "ryankuo",
   "description": "Fuzzy Omarchy menu search with frecency-ranked files, stars, in-menu file actions, and a themed settings window for indexed folders",
   "kinds": [
