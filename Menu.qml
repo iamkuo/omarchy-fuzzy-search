@@ -91,7 +91,7 @@ Item {
   property int fileActionReturnIndex: 0
   property var stateQueue: []
   property var hiddenAppIds: ({})
-  readonly property string settingsLauncher: Qt.resolvedUrl("bin/omarchy-search-settings").toString().replace(/^file:\/\//, "")
+  property bool settingsOpen: false
 
   // Shared application engine (entries, hidden filters, icons, launch,
   // removal), owned by the shell and also used by the standalone launcher.
@@ -1284,12 +1284,16 @@ Item {
     return "ok"
   }
 
-  // Settings is its own GTK app: a normal top-level window that stacks,
-  // focuses, and closes like any other application. The menu closes first so
-  // the shared overlay does not fight it for keyboard focus.
+  // Settings opens in a FloatingWindow: a normal top-level window rather than
+  // a layer-shell overlay, but still QML hosted by this plugin and drawn with
+  // the Omarchy theme. The menu closes first so the overlay does not fight it
+  // for keyboard focus.
   function openSettings() {
     root.cancel()
-    Util.execDetached(root.settingsLauncher)
+    root.settingsOpen = true
+    Qt.callLater(function() {
+      settingsView.focusView()
+    })
   }
 
   function disarmPointer() {
@@ -1965,5 +1969,40 @@ Item {
     }
   }
 
+
+
+  // A FloatingWindow is an xdg-toplevel, so Hyprland manages it like any other
+  // app: it can be focused, tiled, floated, and it is never pinned above
+  // other windows. Styling comes from qs.Commons, like Omarchy's own panels.
+  FloatingWindow {
+    id: settingsWindow
+    visible: root.settingsOpen
+    title: "Fuzzy Search Settings"
+    color: Color.background
+    implicitWidth: Style.space(640)
+    implicitHeight: Style.space(520)
+    minimumSize: Qt.size(Style.space(480), Style.space(380))
+
+    onVisibleChanged: {
+      if (!visible && root.settingsOpen) root.settingsOpen = false
+    }
+
+    FocusScope {
+      anchors.fill: parent
+      focus: true
+      Keys.onEscapePressed: root.settingsOpen = false
+
+      Settings {
+        id: settingsView
+        anchors.fill: parent
+        anchors.margins: Style.space(14)
+        active: root.settingsOpen
+        fontFamily: root.fontFamily
+        omarchyPath: root.omarchyPath
+        shell: root.shell
+        onCloseRequested: root.settingsOpen = false
+      }
+    }
+  }
 
 }

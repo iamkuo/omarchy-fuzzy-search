@@ -11,9 +11,10 @@ results, frecency ranking, starred files, and an in-menu file actions submenu.
   menu options.
 - **File actions** open in the same menu: default app, editor, file manager,
   terminal, copy path, and star/unstar.
-- **A settings app** — a normal GTK4/libadwaita window (not an overlay) to
-  add or remove indexed folders, include hidden files, keep the walk on local
-  filesystems, tune the refresh interval, and rebuild or stop the index.
+- **A settings window** — a Quickshell `FloatingWindow` (a normal top-level
+  window, not an overlay) themed with Omarchy's colors and font. Add or remove
+  indexed folders, include hidden files, keep the walk on local filesystems,
+  tune the refresh interval, and rebuild or stop the index.
 
 ## Requirements
 
@@ -21,7 +22,6 @@ results, frecency ranking, starred files, and an in-menu file actions submenu.
 - `fd`, `fzf`, `jq`, `flock` (`util-linux`), `nautilus`, `wl-copy`, and
   `xdg-terminal-exec`. These ship with or are already used by a normal Omarchy
   install.
-- `python-gobject`, `gtk4`, and `libadwaita` for the settings window.
 
 ## Install
 
@@ -79,21 +79,23 @@ Open it from `Super+Space` by typing `search settings`, or directly:
 omarchy-shell shell summon ryankuo.menu '{"mode":"settings"}'
 ```
 
-The menu closes and the settings window opens as its own app (a normal
-top-level window, not a layer-shell overlay), so it can be focused, tiled or
-floated, and never stays above other windows.
+The menu closes and the settings window opens in a Quickshell
+`FloatingWindow`: a normal top-level window rather than a layer-shell overlay,
+so it can be focused, tiled or floated, and never stays above other windows.
+It is still QML hosted by this plugin and drawn with `qs.Commons` — the same
+colors, borders, and mono font as Omarchy's own panels (and as the Wallpaper
+Engine plugin).
 
-The settings window is still part of this plugin: it ships in the same folder,
-uses the same `bin/omarchy-search-config` and config file, and is only
-reachable through the plugin's menu entry or `summon` route. Disabling
-`ryankuo.menu` removes both. `omarchy plugin update` updates it with the rest of
-the plugin.
+The window is part of the plugin: same folder, same `bin/omarchy-search-config`,
+same config file, and only reachable through the plugin's menu entry or
+`summon` route. Disabling `ryankuo.menu` removes both, and
+`omarchy plugin update` updates it with the rest of the plugin.
 
-Optional Hyprland rule to float and centre it like a dialog (class is stable):
+Optional Hyprland rule to float and centre it (the window title is stable):
 
 ```lua
 -- ~/.config/hypr/windows.lua
-o.window({ class = "^(io.github.iamkuo.FuzzySearch)$" }, { float = true })
+o.window({ title = "^(Fuzzy Search Settings)$" }, { float = true })
 ```
 
 In the window:
