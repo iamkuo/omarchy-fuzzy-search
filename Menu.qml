@@ -129,7 +129,7 @@ Item {
   property int cardWidth: Math.min(root.settingsMode ? Style.space(420) : (root.dmenuActive ? Style.space(root.dmenuWidth) : ((root.activeMenu === "trigger.capture.screenrecord" || root.activeMenu === "style.font") ? Style.space(520) : Style.space(300))), panel.width - Style.gapsOut * 2)
   property int visibleRowsHeight: root.dmenuActive ? dmenuRowListHeight(layoutSerial, displayModel.count, filterText) : rowListHeight(layoutSerial, displayModel.count, filterText, searchDivider)
   property int cardHeight: root.settingsMode
-    ? Math.min(Style.space(470), panel.height - Style.gapsOut * 2)
+    ? Math.min(Style.space(500), panel.height - Style.gapsOut * 2)
     : (root.dmenuActive
       ? Math.min(contentMargin * 2 + headerHeight + (mode === "input" ? 0 : contentSpacing + visibleRowsHeight), panel.height - Style.gapsOut * 2)
       : Math.min(contentMargin * 2 + headerHeight + contentSpacing + visibleRowsHeight, panel.height - Style.gapsOut * 2))

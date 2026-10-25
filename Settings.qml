@@ -37,8 +37,8 @@ Item {
   readonly property color selectedBackground: Color.menu.selectedBackground
   readonly property color selectedText: Color.menu.selectedText
   readonly property color urgent: Color.urgent
-  readonly property int rowHeight: Math.max(Style.space(50), Style.font.body + Style.font.caption + Style.spacing.rowPaddingX * 2)
-  readonly property int sectionHeight: Math.max(Style.space(28), Style.font.caption + Style.spacing.md)
+  readonly property int rowHeight: Math.max(Style.space(46), Style.font.body + Style.font.caption + Style.spacing.md * 2)
+  readonly property int sectionHeight: Math.max(Style.space(24), Style.font.caption + Style.spacing.sm)
   readonly property var ttlOptions: [60, 300, 900, 1800, 3600]
 
   function focusView() {
