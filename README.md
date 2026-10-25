@@ -11,6 +11,9 @@ results, frecency ranking, starred files, and an in-menu file actions submenu.
   menu options.
 - **File actions** open in the same menu: default app, editor, file manager,
   terminal, copy path, and star/unstar.
+- **Settings in the same menu** — add or remove indexed folders, include hidden
+  files, keep the walk on local filesystems, tune the refresh interval, and
+  rebuild or stop the index. No second window.
 
 ## Requirements
 
@@ -33,6 +36,20 @@ omarchy plugin enable ryankuo.menu
 The plugin declares `clonedFrom: omarchy.menu`, so Omarchy routes existing
 `omarchy.menu` calls and the `Super+Space` binding to this clone.
 
+Add the settings entry to your user menu so it is reachable by typing
+`Super+Space` → `search settings`:
+
+```jsonc
+// ~/.config/omarchy/extensions/omarchy-menu.jsonc
+"search-settings": {
+  "icon": "󰍉",
+  "label": "Search Settings",
+  "aliases": ["fuzzy", "file-search", "search-folders", "index-folders"],
+  "description": "Choose which folders Super+Space file search indexes",
+  "action": "omarchy-shell shell summon ryankuo.menu '{\"mode\":\"settings\"}'"
+}
+```
+
 Because this is a clone, upstream Omarchy menu changes are not merged
 automatically. Diff against the built-in plugin after Omarchy updates if you
 want to pick up new menu features.
@@ -53,15 +70,58 @@ want to pick up new menu features.
 - Starred files only appear when they match the query, and always sort above
   other files.
 
+## Settings
+
+Open it from `Super+Space` by typing `search settings`, or directly:
+
+```bash
+omarchy-shell shell summon ryankuo.menu '{"mode":"settings"}'
+```
+
+The settings view opens in the same card:
+
+- **FOLDERS** — every indexed root. `Enter` opens it in the file manager,
+  `Delete` removes it, **Add folder…** takes a path (for example `~/Projects`).
+- **Include hidden files** — index dotfiles and hidden directories.
+- **Stay on local filesystem** — skip network and FUSE mounts. Keep this on for
+  BTRFS speed; turning it off can make a rebuild walk Google Drive or SSHFS.
+- **Refresh index** — cycle the automatic rebuild interval between 1 minute and
+  1 hour.
+- **Rebuild index now** — force a rebuild; while one is running the row becomes
+  **Stop indexing**.
+
+Every settings change rebuilds the index in the background, so new folders are
+searchable without waiting for the interval to expire. Esc closes the view.
+
+The configuration is `~/.config/omarchy/fuzzy-search.json`:
+
+```json
+{
+  "version": 1,
+  "roots": ["~", "~/Projects"],
+  "excludes": ["node_modules", ".git", "target", "build"],
+  "hidden": false,
+  "oneFileSystem": true,
+  "ttlSeconds": 300,
+  "maxResults": 200000,
+  "maxCandidates": 500,
+  "threads": 0
+}
+```
+
+`threads: 0` uses every core. `maxCandidates` caps how many `fzf` hits are
+merged before ranking. The file is created with defaults on first open; a
+pre-existing `~/.config/omarchy/search-roots` list is imported once.
+
 ## State and performance
 
 - Search state: `~/.local/state/omarchy/search.json`
 - File index cache: `~/.cache/omarchy-search/files`
-- The index refreshes every five minutes.
+- The index refreshes on the interval from settings (five minutes by default).
 - On BTRFS, the index uses `fd --one-file-system`, so it stays on the local
   filesystem and skips rclone/FUSE mounts such as `~/Drive`.
-- Add extra roots in `~/.config/omarchy/search-roots`, one path per line.
-  Adding network mounts will make indexing much slower.
+- Roots come from the settings view (or the JSON file). Adding network mounts
+  makes indexing much slower; the local-filesystem switch protects against it.
 - Delete `~/.local/state/omarchy/search.json` to reset usage counts and stars.
 
 ## Attribution and license

@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Read and edit the Fuzzy Search settings file. The QML settings view drives
+# this script instead of writing JSON itself, so every change is one atomic
+# rename and two editors cannot clobber each other.
+
+conf_dir="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy"
+conf="$conf_dir/fuzzy-search.json"
+legacy="$conf_dir/search-roots"
+lock="$conf_dir/.fuzzy-search.lock"
+index="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-search/files"
+
+defaults() {
+  cat <<'JSON'
+{
+  "version": 1,
+  "roots": ["~"],
+  "excludes": [
+    "node_modules", ".git", "target", "build", "dist", "__pycache__",
+    "venv", ".venv", "vendor", ".next", ".nuxt", "coverage", ".gradle",
+    ".m2", "steamapps", "compatdata"
+  ],
+  "hidden": false,
+  "oneFileSystem": true,
+  "ttlSeconds": 300,
+  "maxResults": 200000,
+  "maxCandidates": 500,
+  "threads": 0
+}
+JSON
+}
+
+expand_path() {
+  local path=$1
+  [[ $path == "~" ]] && path="$HOME"
+  [[ $path == "~/"* ]] && path="$HOME/${path#\~/}"
+  printf '%s\n' "$path"
+}
+
+ensure_config() {
+  [[ -s $conf ]] && return 0
+  mkdir -p "$conf_dir"
+
+  local roots=()
+  if [[ -f $legacy ]]; then
+    local line
+    while IFS= read -r line || [[ -n $line ]]; do
+      line="${line#"${line%%[![:space:]]*}"}"
+      line="${line%"${line##*[![:space:]]}"}"
+      [[ -z $line || $line == \#* ]] && continue
+      line=$(expand_path "$line")
+      [[ -d $line ]] && roots+=("$line")
+    done <"$legacy"
+  fi
+
+  if (( ${#roots[@]} > 0 )); then
+    defaults | jq --args '.roots = $ARGS.positional' "${roots[@]}" >"$conf"
+  else
+    defaults >"$conf"
+  fi
+}
+
+write_config() {
+  local jq_args=("$@")
+  mkdir -p "$conf_dir"
+  exec 9>"$lock"
+  flock 9
+  local tmp
+  tmp=$(mktemp "$conf_dir/.fuzzy-search.XXXXXX")
+  jq "${jq_args[@]}" "$conf" >"$tmp"
+  mv -f "$tmp" "$conf"
+  exec 9>&-
+}
+
+rebuild_in_background() {
+  # Config edits change what the index should contain. Rebuild in the
+  # background so the menu reflects the new folders without waiting for the
+  # TTL. The index script takes a lock, so a run already in flight wins and
+  # this one exits immediately.
+  setsid "$(cd "$(dirname "$0")" && pwd)/omarchy-search-index" --force \
+    >/dev/null 2>&1 </dev/null &
+}
+
+require_dir() {
+  local path
+  path=$(expand_path "$1")
+  path=$(realpath -m -- "$path")
+  if [[ ! -d $path ]]; then
+    echo "Not a directory: $1" >&2
+    exit 1
+  fi
+  printf '%s\n' "$path"
+}
+
+command="${1-}"
+case "$command" in
+  path)
+    printf '%s\n' "$conf"
+    ;;
+  get)
+    ensure_config
+    cat "$conf"
+    ;;
+  add-root)
+    [[ $# -ge 2 ]] || { echo "add-root needs a path" >&2; exit 2; }
+    ensure_config
+    path=$(require_dir "$2")
+    write_config --arg path "$path" '
+      .roots = ((.roots // []) + [$path] | unique)
+    '
+    rebuild_in_background
+    ;;
+  remove-root)
+    [[ $# -ge 2 ]] || { echo "remove-root needs a path" >&2; exit 2; }
+    ensure_config
+    path=$(expand_path "$2")
+    path=$(realpath -m -- "$path")
+    write_config --arg path "$path" '
+      .roots = ((.roots // []) | map(select(. != $path)))
+    '
+    if ! jq -e '(.roots // []) | length > 0' "$conf" >/dev/null; then
+      write_config '.roots = ["~"]'
+    fi
+    rebuild_in_background
+    ;;
+  set)
+    [[ $# -ge 3 ]] || { echo "set needs a key and a JSON value" >&2; exit 2; }
+    ensure_config
+    write_config --arg key "$2" --argjson value "$3" '.[$key] = $value'
+    case "$2" in
+      roots|excludes|hidden|oneFileSystem|maxResults|threads)
+        rebuild_in_background
+        ;;
+    esac
+    ;;
+  stats)
+    ensure_config
+    missing=()
+    while IFS= read -r path; do
+      [[ -n $path ]] || continue
+      path=$(expand_path "$path")
+      [[ -d $path ]] || missing+=("$path")
+    done < <(jq -r '.roots[]?' "$conf")
+
+    if [[ -s $index ]]; then
+      files=$(wc -l <"$index")
+      bytes=$(stat -c %s "$index")
+      mtime=$(stat -c %Y "$index")
+      now=$(date +%s)
+      age=$((now - mtime))
+    else
+      files=0
+      bytes=0
+      age=-1
+    fi
+
+    if (( ${#missing[@]} > 0 )); then
+      jq -nc --argjson files "$files" --argjson bytes "$bytes" --argjson age "$age" \
+        --args '{files: $files, bytes: $bytes, ageSeconds: $age, missingRoots: $ARGS.positional}' \
+        "${missing[@]}"
+    else
+      jq -nc --argjson files "$files" --argjson bytes "$bytes" --argjson age "$age" \
+        '{files: $files, bytes: $bytes, ageSeconds: $age, missingRoots: []}'
+    fi
+    ;;
+  rebuild)
+    exec "$(dirname "$0")/omarchy-search-index" --force
+    ;;
+  *)
+    cat >&2 <<'USAGE'
+Usage:
+  omarchy-search-config get
+  omarchy-search-config add-root <path>
+  omarchy-search-config remove-root <path>
+  omarchy-search-config set <key> <json-value>
+  omarchy-search-config stats
+  omarchy-search-config rebuild
+USAGE
+    exit 2
+    ;;
+esac

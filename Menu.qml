@@ -24,7 +24,9 @@ Item {
 
     if (payload.fontFamily) root.fontFamily = payload.fontFamily
 
-    if (payload.mode === "select" || payload.mode === "input") {
+    if (payload.mode === "settings") {
+      root.openSettings()
+    } else if (payload.mode === "select" || payload.mode === "input") {
       root.openDmenu(payload)
     } else {
       root.openRoute(payload.initialMenu || payload.menu || "root")
@@ -89,6 +91,7 @@ Item {
   property int fileActionReturnIndex: 0
   property var stateQueue: []
   property var hiddenAppIds: ({})
+  property bool settingsMode: false
 
   // Shared application engine (entries, hidden filters, icons, launch,
   // removal), owned by the shell and also used by the standalone launcher.
@@ -123,11 +126,13 @@ Item {
   property int dividerHeight: Style.space(17)
   property bool searchDivider: false
   property int layoutSerial: 0
-  property int cardWidth: Math.min(root.dmenuActive ? Style.space(root.dmenuWidth) : ((root.activeMenu === "trigger.capture.screenrecord" || root.activeMenu === "style.font") ? Style.space(520) : Style.space(300)), panel.width - Style.gapsOut * 2)
+  property int cardWidth: Math.min(root.settingsMode ? Style.space(420) : (root.dmenuActive ? Style.space(root.dmenuWidth) : ((root.activeMenu === "trigger.capture.screenrecord" || root.activeMenu === "style.font") ? Style.space(520) : Style.space(300))), panel.width - Style.gapsOut * 2)
   property int visibleRowsHeight: root.dmenuActive ? dmenuRowListHeight(layoutSerial, displayModel.count, filterText) : rowListHeight(layoutSerial, displayModel.count, filterText, searchDivider)
-  property int cardHeight: root.dmenuActive
-    ? Math.min(contentMargin * 2 + headerHeight + (mode === "input" ? 0 : contentSpacing + visibleRowsHeight), panel.height - Style.gapsOut * 2)
-    : Math.min(contentMargin * 2 + headerHeight + contentSpacing + visibleRowsHeight, panel.height - Style.gapsOut * 2)
+  property int cardHeight: root.settingsMode
+    ? Math.min(Style.space(470), panel.height - Style.gapsOut * 2)
+    : (root.dmenuActive
+      ? Math.min(contentMargin * 2 + headerHeight + (mode === "input" ? 0 : contentSpacing + visibleRowsHeight), panel.height - Style.gapsOut * 2)
+      : Math.min(contentMargin * 2 + headerHeight + contentSpacing + visibleRowsHeight, panel.height - Style.gapsOut * 2))
 
   function finishRequest(selection) {
     if (!root.requestActive || !root.doneFile) {
@@ -1189,6 +1194,7 @@ Item {
   function cancel() {
     if (root.dmenuActive) root.finishRequest(null)
     opened = false
+    settingsMode = false
     filterText = ""
     root.fileActionPath = ""
     root.fileActionName = ""
@@ -1209,6 +1215,7 @@ Item {
     cursorActive = true
     root.fileActionPath = ""
     root.fileActionName = ""
+    root.settingsMode = false
     root.clearFileResults(false)
     root.disarmPointer()
     root.evaluateGuards()
@@ -1243,6 +1250,7 @@ Item {
     cursorActive = mode !== "input"
     root.fileActionPath = ""
     root.fileActionName = ""
+    root.settingsMode = false
     root.clearFileResults(false)
     root.disarmPointer()
     opened = true
@@ -1279,6 +1287,32 @@ Item {
     root.pendingInitialMenu = id
     root.openExistingMenu(id)
     return "ok"
+  }
+
+  // Settings lives in the same card instead of a second window, so the
+  // Super+Space menu is the one place to search, act, and configure.
+  function openSettings() {
+    requestSerial += 1
+    mode = "menu"
+    requestActive = false
+    selectionFile = ""
+    doneFile = ""
+    activeMenu = "root"
+    navStack = []
+    filterText = ""
+    selectedIndex = 0
+    cursorActive = false
+    root.fileActionPath = ""
+    root.fileActionName = ""
+    root.clearFileResults(false)
+    root.disarmPointer()
+    root.settingsMode = true
+    root.opened = true
+    rebuildDisplay()
+    searchStateFile.reload()
+    Qt.callLater(function() {
+      if (settingsLoader.item) settingsLoader.item.focusView()
+    })
   }
 
   function disarmPointer() {
@@ -1494,7 +1528,7 @@ Item {
   }
   PanelWindow {
     id: panel
-    visible: root.opened && root.rowsLoaded
+    visible: root.opened && (root.rowsLoaded || root.settingsMode)
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "omarchy-menu"
@@ -1547,7 +1581,7 @@ Item {
         id: keyCatcher
         anchors.fill: parent
         z: root.deleteConfirmOpen ? 20 : 0
-        focus: true
+        focus: !root.settingsMode
 
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
@@ -1640,7 +1674,27 @@ Item {
         }
       }
 
+      Loader {
+        id: settingsLoader
+        active: root.settingsMode
+        visible: root.settingsMode
+        source: "Settings.qml"
+        anchors.fill: parent
+        anchors.topMargin: card.contentTopInset
+        anchors.rightMargin: card.contentRightInset
+        anchors.bottomMargin: card.contentBottomInset
+        anchors.leftMargin: card.contentLeftInset
+        onLoaded: {
+          item.fontFamily = root.fontFamily
+          item.omarchyPath = root.omarchyPath
+          item.shell = root.shell
+          item.closeRequested.connect(root.cancel)
+          item.focusView()
+        }
+      }
+
       Column {
+        visible: !root.settingsMode
         anchors.fill: parent
         anchors.topMargin: card.contentTopInset
         anchors.rightMargin: card.contentRightInset

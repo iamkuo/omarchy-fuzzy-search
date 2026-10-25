@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "ryankuo.menu",
   "name": "Fuzzy Omarchy Menu",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "ryankuo",
-  "description": "Fuzzy Omarchy menu search with frecency-ranked files, stars, and in-menu file actions",
+  "description": "Fuzzy Omarchy menu search with frecency-ranked files, stars, in-menu file actions, and a settings view for indexed folders",
   "kinds": [
     "menu",
     "bar-widget"
@@ -22,5 +22,6 @@
   },
   "omarchy": {
     "clonedFrom": "omarchy.menu"
-  }
+  },
+  "license": "MIT"
 }

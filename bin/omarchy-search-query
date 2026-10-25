@@ -4,7 +4,13 @@ set -eu
 query="${1-}"
 cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-search"
 index="$cache_dir/files"
-limit="${OMARCHY_SEARCH_LIMIT:-500}"
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/fuzzy-search.json"
+limit="${OMARCHY_SEARCH_LIMIT:-}"
+
+if [[ -z $limit ]]; then
+  limit=500
+  [[ -s $conf ]] && limit=$(jq -r '.maxCandidates // 500' "$conf" 2>/dev/null || echo 500)
+fi
 
 [[ -n $query && -f $index ]] || exit 0
 

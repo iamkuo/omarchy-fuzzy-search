@@ -4,12 +4,19 @@ set -euo pipefail
 cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-search"
 index="$cache_dir/files"
 lock="$cache_dir/.index.lock"
-ttl="${OMARCHY_SEARCH_TTL:-300}"
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/fuzzy-search.json"
 
 mkdir -p "$cache_dir"
 
 force=0
 [[ ${1:-} == "--force" ]] && force=1
+
+# Config commands are cheap, but the cached path must never pay for them.
+ttl=300
+if [[ -s $conf ]]; then
+  ttl=$(jq -r '.ttlSeconds // 300' "$conf" 2>/dev/null || echo 300)
+fi
+[[ -n ${OMARCHY_SEARCH_TTL:-} ]] && ttl=$OMARCHY_SEARCH_TTL
 
 if (( ! force )) && [[ -f $index ]]; then
   now=$(date +%s)
@@ -24,8 +31,33 @@ tmp="$cache_dir/.files.$$"
 trap 'rm -f "$tmp"' EXIT
 
 roots=("$HOME")
-if [[ -f $HOME/.config/omarchy/search-roots ]]; then
-  roots=()
+excludes=()
+hidden=0
+one_file_system=1
+threads="$(nproc)"
+max_results=200000
+
+if [[ -s $conf ]]; then
+  mapfile -t configured_roots < <(jq -r '.roots[]?' "$conf" 2>/dev/null || true)
+  mapfile -t excludes < <(jq -r '.excludes[]?' "$conf" 2>/dev/null || true)
+  [[ $(jq -r '.hidden // false' "$conf" 2>/dev/null) == "true" ]] && hidden=1
+  [[ $(jq -r '.oneFileSystem // true' "$conf" 2>/dev/null) == "false" ]] && one_file_system=0
+  configured_threads=$(jq -r '.threads // 0' "$conf" 2>/dev/null || echo 0)
+  configured_max=$(jq -r '.maxResults // 0' "$conf" 2>/dev/null || echo 0)
+  (( configured_threads > 0 )) && threads=$configured_threads
+  (( configured_max > 0 )) && max_results=$configured_max
+
+  if (( ${#configured_roots[@]} > 0 )); then
+    roots=()
+    for root in "${configured_roots[@]}"; do
+      root="${root/#\~/$HOME}"
+      [[ -d $root ]] && roots+=("$root")
+    done
+  fi
+fi
+
+# Fall back to the pre-settings list for anyone upgrading without a config.
+if (( ${#roots[@]} == 0 )) && [[ -f $HOME/.config/omarchy/search-roots ]]; then
   while IFS= read -r line; do
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
@@ -33,30 +65,20 @@ if [[ -f $HOME/.config/omarchy/search-roots ]]; then
     line="${line/#\~/$HOME}"
     [[ -d $line ]] && roots+=("$line")
   done <"$HOME/.config/omarchy/search-roots"
-  (( ${#roots[@]} )) || roots=("$HOME")
 fi
 
-fd --type f \
-  --one-file-system \
-  --absolute-path \
-  --threads "${OMARCHY_SEARCH_THREADS:-$(nproc)}" \
-  --max-results "${OMARCHY_SEARCH_MAX_RESULTS:-200000}" \
-  --exclude node_modules \
-  --exclude .git \
-  --exclude target \
-  --exclude build \
-  --exclude dist \
-  --exclude __pycache__ \
-  --exclude venv \
-  --exclude .venv \
-  --exclude vendor \
-  --exclude .next \
-  --exclude .nuxt \
-  --exclude coverage \
-  --exclude .gradle \
-  --exclude .m2 \
-  --exclude steamapps \
-  --exclude compatdata \
-  . "${roots[@]}" >"$tmp" 2>/dev/null || true
+[[ -n ${OMARCHY_SEARCH_THREADS:-} ]] && threads=$OMARCHY_SEARCH_THREADS
+[[ -n ${OMARCHY_SEARCH_MAX_RESULTS:-} ]] && max_results=$OMARCHY_SEARCH_MAX_RESULTS
+
+(( ${#roots[@]} > 0 )) || roots=("$HOME")
+
+args=(--type f --absolute-path --threads "$threads" --max-results "$max_results")
+(( hidden )) && args+=(--hidden)
+(( one_file_system )) && args+=(--one-file-system)
+for exclude in "${excludes[@]}"; do
+  [[ -n $exclude ]] && args+=(--exclude "$exclude")
+done
+
+fd "${args[@]}" . "${roots[@]}" >"$tmp" 2>/dev/null || true
 
 mv -f "$tmp" "$index"
