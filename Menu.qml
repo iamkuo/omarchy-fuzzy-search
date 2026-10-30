@@ -293,9 +293,11 @@ Item {
       actionFor: function(value) { return "omarchy-font-set " + Util.shellQuote(value) }
     },
     "power-profiles": {
-      script: "current=$(powerprofilesctl get 2>/dev/null); omarchy-powerprofiles-list 2>/dev/null | while read -r p; do [[ -z $p ]] && continue; printf '%s\\t%s\\t%s\\n' \"$p\" \"$p\" \"$current\"; done",
+      // asusctl-backed: power-profiles-daemon cannot switch the platform
+      // profile on this kernel, asusd is what actually moves it.
+      script: "current=$(asus-powerprofiles get 2>/dev/null); asus-powerprofiles list 2>/dev/null | while read -r p; do [[ -z $p ]] && continue; printf '%s\\t%s\\t%s\\n' \"$p\" \"$p\" \"$current\"; done",
       icon: "\udb81\udc0b",
-      actionFor: function(value) { return "omarchy-powerprofiles-set autodetect " + Util.shellQuote(value) }
+      actionFor: function(value) { return "asus-powerprofiles set autodetect " + Util.shellQuote(value) }
     }
   })
 
