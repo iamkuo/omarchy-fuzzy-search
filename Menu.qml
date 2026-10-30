@@ -310,6 +310,12 @@ Item {
     return id.slice(-8) === ".desktop" ? id.slice(0, -8) : id
   }
 
+  // AppImages carry their own runtime and need no default handler; without one,
+  // `xdg-open` silently no-ops. Detect by extension and run the image itself.
+  function isAppImage(path) {
+    return /\.appimage$/i.test(String(path || ""))
+  }
+
   function desktopAppEntries() {
     var values = DesktopEntries.applications.values || []
     var rows = []
@@ -1066,6 +1072,7 @@ Item {
     if (action === "editor") Util.execDetached(root.omarchyPath + "/bin/omarchy-launch-editor " + Util.shellQuote(path))
     else if (action === "reveal") Util.execDetached("uwsm-app -- nautilus --select " + Util.shellQuote(path))
     else if (action === "terminal") Util.execDetached("xdg-terminal-exec --dir=" + Util.shellQuote(dir))
+    else if (action === "open" && root.isAppImage(path)) Util.execDetached("uwsm-app -- " + Util.shellQuote(path))
     else Util.execDetached("xdg-open " + Util.shellQuote(path))
   }
 

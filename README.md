@@ -10,7 +10,8 @@ results, frecency ranking, starred files, and an in-menu file actions submenu.
 - **Starred files** always rank above other files, but never above Omarchy
   menu options.
 - **File actions** open in the same menu: default app, editor, file manager,
-  terminal, copy path, and star/unstar.
+  terminal, copy path, and star/unstar. AppImages launch themselves through
+  UWSM, since `xdg-open` has no AppImage handler to fall back on.
 - **A settings window** — a Quickshell `FloatingWindow` (a normal top-level
   window, not an overlay) themed with Omarchy's colors and font. Add or remove
   indexed folders, include hidden files, keep the walk on local filesystems,
