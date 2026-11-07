@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Keep the forked menu in step with the packaged omarchy.menu after updates.
+# This fork owns Super+Space (it carries the fuzzy file search), so upstream
+# menu fixes only reach it through omarchy-menu-sync's three-way re-merge.
+#
+# Install: omarchy hook install post-update <this-file>
+
+set -uo pipefail
+
+sync=$HOME/.config/omarchy/plugins/ryankuo.menu/bin/omarchy-menu-sync
+[[ -x $sync ]] || exit 0
+
+# Prints a summary on a clean merge, a critical notification on conflicts.
+# A merged menu needs a shell restart to reach the screen; the script does it.
+"$sync" || true
+
+exit 0

@@ -149,21 +149,35 @@ pre-existing `~/.config/omarchy/search-roots` list is imported once.
 
 ## Tracking upstream
 
-`Menu.qml` and `MenuModel.js` are three-way merges of Omarchy's built-in
-`omarchy.menu` plugin on top of this fork's features. The merge base is upstream
-commit `64e20f8f`; `Menu.qml`/`MenuModel.js` are currently synced with the
-`omarchy.menu` shipped in Omarchy 4.5.0.
+`Menu.qml`, `MenuModel.js` and `BarWidget.qml` are three-way merges of
+Omarchy's built-in `omarchy.menu`, so upstream menu fixes and features reach
+this fork without hand-editing. `upstream/` holds the packaged copies the fork
+was last synced with (the merge base) and the Omarchy version they came from.
 
-After each `omarchy update`, re-merge so new upstream menu features (providers,
-translation catalogs, search terms) reach the fork:
+A `post-update` hook re-merges automatically at the end of every
+`omarchy update`:
 
 ```bash
-git merge-file -L fork -L base -L upstream \
-  Menu.qml <upstream-at-base>/Menu.qml /usr/share/omarchy/shell/plugins/menu/Menu.qml
+omarchy hook install post-update hooks/sync-menu-fork.hook
 ```
 
-Fork-only strings (file actions, the Settings window) are still English; menu
-rows and providers follow the catalog at
+Run it any time by hand:
+
+```bash
+bin/omarchy-menu-sync --check      # is the fork behind the packaged menu?
+bin/omarchy-menu-sync             # re-merge and restart the shell
+bin/omarchy-menu-sync --no-restart # ...without touching the running shell
+```
+
+A clean merge rewrites the plugin files, advances `upstream/` to the new
+release, and restarts the shell (plugin QML does not reliably hot-reload into a
+running shell). A conflict leaves the plugin untouched and writes the merged,
+base and upstream trees to `~/.local/state/omarchy-menu-sync/conflicts/` for a
+manual pass; nothing is applied until the next clean run.
+
+Fork-only files (`Settings.qml`, `bin/omarchy-search-*`) are never touched by
+the merge. Fork-only strings (file actions, the Settings window) are still
+English; menu rows and providers follow the catalog at
 `$OMARCHY_PATH/default/i18n/<code>/menu.json`.
 
 ## Attribution and license

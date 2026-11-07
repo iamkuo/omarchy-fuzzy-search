@@ -1,0 +1,180 @@
+#!/bin/bash
+
+# omarchy:summary=Re-merge the packaged Omarchy menu into this forked menu
+# omarchy:args=[--check] [--no-restart]
+# omarchy:examples=omarchy-menu-sync --check | omarchy-menu-sync
+#
+# This plugin replaces omarchy.menu because its Menu.qml carries the fuzzy file
+# search, so it never receives upstream menu changes on its own. This script
+# re-merges the packaged menu into the fork, three-way against the version the
+# fork was last synced with (upstream/), so upstream fixes and features land
+# here too and the fork's additions survive.
+#
+# Clean merges update the plugin files and the upstream/ base. Conflicts leave
+# the plugin untouched and drop the half-merged files in
+# ~/.local/state/omarchy-menu-sync/conflicts for a manual pass.
+
+set -uo pipefail
+
+plugin_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
+# MENU_SYNC_SOURCE overrides the packaged plugin directory (used by the tests).
+upstream_dir=${MENU_SYNC_SOURCE:-$omarchy_path/shell/plugins/menu}
+base_dir=$plugin_dir/upstream
+state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-menu-sync
+
+# Files the packaged plugin owns. manifest.json is deliberately skipped: the
+# fork's id, name, version and clonedFrom are its own.
+sync_files=(Menu.qml MenuModel.js BarWidget.qml)
+
+check_only=0
+restart=1
+while (($# > 0)); do
+  case $1 in
+  --check) check_only=1 ;;
+  --no-restart) restart=0 ;;
+  -h | --help)
+    sed -n '/^# omarchy:summary/,/^# *$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    exit 0
+    ;;
+  *)
+    echo "omarchy-menu-sync: unknown option: $1" >&2
+    exit 2
+    ;;
+  esac
+  shift
+done
+
+[[ -d $upstream_dir ]] || {
+  echo "omarchy-menu-sync: no packaged menu at $upstream_dir" >&2
+  exit 2
+}
+
+new_version=$(omarchy version 2>/dev/null | head -1)
+[[ -n $new_version ]] || new_version=$(pacman -Q omarchy 2>/dev/null | awk '{print $2}')
+[[ -n $new_version ]] || new_version=unknown
+old_version=$(cat "$base_dir/VERSION" 2>/dev/null || true)
+
+notify() { # title, body, urgency
+  command -v omarchy-notification-send >/dev/null 2>&1 || return 0
+  omarchy-notification-send -u "${3:-normal}" -g "$1" "$1" "$2" >/dev/null 2>&1 || true
+}
+
+# What upstream changed since the last sync?
+pending=()
+for f in "${sync_files[@]}"; do
+  pkg=$upstream_dir/$f
+  [[ -f $pkg ]] || continue
+  base=$base_dir/$f
+  if [[ ! -f $base ]]; then
+    pending+=("$f")
+  elif ! cmp -s "$pkg" "$base"; then
+    pending+=("$f")
+  fi
+done
+
+if ((${#pending[@]} == 0)); then
+  if [[ $old_version != "$new_version" && -d $base_dir ]]; then
+    printf '%s\n' "$new_version" >"$base_dir/VERSION"
+  fi
+  ((check_only)) || echo "menu fork is in sync with omarchy ${new_version:-unknown}"
+  exit 0
+fi
+
+if ((check_only)); then
+  echo "menu fork is behind omarchy ${new_version:-unknown}: ${pending[*]}"
+  exit 1
+fi
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/omarchy-menu-sync.XXXXXX") || exit 1
+trap 'rm -rf "$work"' EXIT
+
+conflicted=()
+changes=()
+for f in "${sync_files[@]}"; do
+  pkg=$upstream_dir/$f
+  base=$base_dir/$f
+  cur=$plugin_dir/$f
+  [[ -f $pkg ]] || continue
+
+  # Nothing changed upstream since the last sync: leave the fork's copy alone.
+  if [[ -f $base ]] && cmp -s "$pkg" "$base"; then continue; fi
+
+  # A file the fork never carried: take upstream's copy as-is.
+  if [[ ! -f $cur ]]; then
+    cp -- "$pkg" "$work/$f"
+    changes+=("$f (added)")
+    continue
+  fi
+
+  if cmp -s "$cur" "$pkg"; then
+    cp -- "$pkg" "$work/$f"
+    continue
+  fi
+
+  # No recorded base: a three-way is impossible, so never rewrite by guess.
+  if [[ ! -f $base ]]; then
+    cp -- "$cur" "$work/$f"
+    conflicted+=("$f (no sync base recorded)")
+    continue
+  fi
+
+  # Untouched since the last sync: fast-forward.
+  if cmp -s "$cur" "$base"; then
+    cp -- "$pkg" "$work/$f"
+    changes+=("$f (updated)")
+    continue
+  fi
+
+  cp -- "$cur" "$work/$f"
+  git merge-file -L "fork" -L "last synced (${old_version:-before first sync})" \
+    -L "omarchy ${new_version}" "$work/$f" "$base" "$pkg" >/dev/null 2>&1
+  rc=$?
+  if ((rc < 0)); then
+    conflicted+=("$f (merge failed)")
+  elif ((rc > 0)); then
+    conflicted+=("$f ($rc conflict(s))")
+  else
+    changes+=("$f (merged)")
+  fi
+done
+
+if ((${#conflicted[@]})); then
+  rm -rf "$state_dir/conflicts"
+  mkdir -p "$state_dir/conflicts/merged" "$state_dir/conflicts/base" "$state_dir/conflicts/upstream" || exit 1
+  cp -- "$work"/* "$state_dir/conflicts/merged/" 2>/dev/null
+  cp -- "$base_dir"/* "$state_dir/conflicts/base/" 2>/dev/null
+  cp -- "$upstream_dir"/* "$state_dir/conflicts/upstream/" 2>/dev/null
+  printf '%s\n' "${conflicted[@]}" >"$state_dir/conflicts/CONFLICTS"
+  echo "omarchy-menu-sync: upstream ${new_version} needs a manual merge: ${conflicted[*]}" >&2
+  echo "half-merged files, base and upstream: $state_dir/conflicts" >&2
+  notify "Menu fork needs a merge" \
+    "Omarchy $new_version changed the menu and it conflicts with your fork. Files: $state_dir/conflicts" critical
+  exit 1
+fi
+
+# Clean: install, then move the sync base to the release we just merged.
+for f in "${sync_files[@]}"; do
+  [[ -f $work/$f ]] || continue
+  install -m 644 "$work/$f" "$plugin_dir/$f" || exit 1
+done
+mkdir -p "$base_dir" || exit 1
+for f in "${sync_files[@]}"; do
+  [[ -f $upstream_dir/$f ]] || continue
+  cp -- "$upstream_dir/$f" "$base_dir/$f" || exit 1
+done
+printf '%s\n' "$new_version" >"$base_dir/VERSION"
+
+summary=${changes[*]:-no file changes}
+echo "menu fork synced to omarchy ${new_version}: ${summary}"
+
+if ((restart)); then
+  # Plugin QML does not reliably hot-reload into a running shell, so a restart
+  # is what actually puts the merged menu on screen.
+  command -v omarchy >/dev/null 2>&1 && omarchy restart shell >/dev/null 2>&1
+  notify "Menu synced with Omarchy $new_version" "$summary" low
+else
+  notify "Menu synced with Omarchy $new_version" "$summary" low
+fi
+
+exit 0
