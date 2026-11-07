@@ -165,15 +165,17 @@ Run it any time by hand:
 
 ```bash
 bin/omarchy-menu-sync --check      # is the fork behind the packaged menu?
-bin/omarchy-menu-sync             # re-merge and restart the shell
+bin/omarchy-menu-sync             # re-merge, commit and restart the shell
 bin/omarchy-menu-sync --no-restart # ...without touching the running shell
+bin/omarchy-menu-sync --no-commit  # ...without recording a git commit
 ```
 
 A clean merge rewrites the plugin files, advances `upstream/` to the new
-release, and restarts the shell (plugin QML does not reliably hot-reload into a
-running shell). A conflict leaves the plugin untouched and writes the merged,
-base and upstream trees to `~/.local/state/omarchy-menu-sync/conflicts/` for a
-manual pass; nothing is applied until the next clean run.
+release, commits just those paths (`Sync menu with Omarchy <version>`), and
+restarts the shell (plugin QML does not reliably hot-reload into a running
+shell). A conflict leaves the plugin untouched and writes the merged, base and
+upstream trees to `~/.local/state/omarchy-menu-sync/conflicts/` for a manual
+pass; nothing is applied until the next clean run.
 
 Fork-only files (`Settings.qml`, `bin/omarchy-search-*`) are never touched by
 the merge. Fork-only strings (file actions, the Settings window) are still
