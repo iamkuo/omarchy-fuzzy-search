@@ -147,6 +147,25 @@ pre-existing `~/.config/omarchy/search-roots` list is imported once.
   makes indexing much slower; the local-filesystem switch protects against it.
 - Delete `~/.local/state/omarchy/search.json` to reset usage counts and stars.
 
+## Tracking upstream
+
+`Menu.qml` and `MenuModel.js` are three-way merges of Omarchy's built-in
+`omarchy.menu` plugin on top of this fork's features. The merge base is upstream
+commit `64e20f8f`; `Menu.qml`/`MenuModel.js` are currently synced with the
+`omarchy.menu` shipped in Omarchy 4.5.0.
+
+After each `omarchy update`, re-merge so new upstream menu features (providers,
+translation catalogs, search terms) reach the fork:
+
+```bash
+git merge-file -L fork -L base -L upstream \
+  Menu.qml <upstream-at-base>/Menu.qml /usr/share/omarchy/shell/plugins/menu/Menu.qml
+```
+
+Fork-only strings (file actions, the Settings window) are still English; menu
+rows and providers follow the catalog at
+`$OMARCHY_PATH/default/i18n/<code>/menu.json`.
+
 ## Attribution and license
 
 `Menu.qml` and `MenuModel.js` are derived from Omarchy's built-in
